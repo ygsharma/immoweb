@@ -131,11 +131,16 @@ class ImmowebExtraction(scrapy.Spider):
         if price:
             data['price'] = price
 
+
+        data['posted_on'] = json_resp['publication']['creationDate'][:10]
+
+
         # property details
         property_dict = {
             'prop_type': json_resp['property']['type'],
             'desc_title': json_resp['property']['title'],
             'description': json_resp['property']['description'],
+            'alternate_description': json_resp['property']['alternativeDescriptions']["nl"],
             'prop_number': json_resp['property']['location']['number'],
             'prop_street': json_resp['property']['location']['street'],
             'prop_locality': json_resp['property']['location']['locality'],
@@ -174,10 +179,12 @@ class ImmowebExtraction(scrapy.Spider):
             data['views'] = value['views']
             data['bookmarks'] = value['bookmarks']
 
-        for i in final_images:
-            yield scrapy.Request(url=i,
-                                 cb_kwargs={'data': data}
-                                 )
+
+        # for i in final_images:
+        #     yield scrapy.Request(url=i,
+        #                          cb_kwargs={'data': data}
+        #                          )
+        yield data
 
 
     def process_images(self, response, data):
