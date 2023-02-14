@@ -152,7 +152,7 @@ class ImmowebExtraction(scrapy.Spider):
             'floor': json_resp['property']['location']['floor']
         }
 
-        # agency details
+        # agency detls
         agency_dict = {
             'agency_email': json_resp['customers'][0]['email'],
             'agency_phone': json_resp['customers'][0]['phoneNumber'],

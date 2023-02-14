@@ -1,10 +1,11 @@
-import scrapy
 import json
+import re
+
+import scrapy
 import random
 
-class ZimmoExtraction(scrapy.Spider):
-    name = 'zimmo_extraction_spider'
-
+class zimmo_web(scrapy.Spider):
+    name = 'zimmo_web_spider'
     user_agents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
@@ -25,35 +26,76 @@ class ZimmoExtraction(scrapy.Spider):
         'Mozilla/5.0 (iPad; CPU OS 13_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/109.0 Mobile/15E148 Safari/605.1.15',
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:102.0) Gecko/20100101 Firefox/102.0',
         'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0'
-        ]
+    ]
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.page_url = ""
-        self.website_url = "https://www.zimmo.be/fr/heusden-3550/a-vendre/maison/K7RMV/"
-        self.error = []
 
 
     def start_requests(self):
-
+        # first page url
+        header = {'user-agent': random.choice(zimmo_web.user_agents)}
+        url = 'https://zimmo.be/fr/rechercher/?search=eyJmaWx0ZXIiOnsic3RhdHVzIjp7ImluIjpbIkZPUl9TQUxFIiwiVEFLRV9PVkVSIl19LCJjYXRlZ29yeSI6eyJpbiI6WyJIT1VTRSIsIkFQQVJUTUVOVCJdfX19'
         yield scrapy.Request(
-            url=self.website_url,
-            callback=self.extract_data,
+            url=url,
             headers=header,
-            cb_kwargs={'header': header}
+            callback=self.get_pages
         )
 
+    def get_pages(self, response):
+        # extract no of total pages
+        # total_pages = int(response.xpath('//ul[@class="dropdown-menu inner selectpicker"]//li[last()]//span/text()').get())
+
+        # extract the base64 code of 2'nd page url, parameter &p=<1, 2, 3>
+        page = response.xpath('//a[contains(@href, "p=2")]/@href').get()
+
+        # generate the url's for all pages up till total no of pages
+        for i in range(2, 100+1):
+            header = {'user-agent': random.choice(zimmo_web.user_agents)}
+            s = '&p=' + str(i)
+            page_url = page.replace('&p=2', s)
+
+        # call on all those urls
+            yield scrapy.Request(
+                url=page_url,
+                callback=self.extract_listings,
+                headers=header
+            )
 
 
-    def extract_data(self, response, header):
+
+    def extract_listings(self, response):
+
+        # extract all the listing urls
+        listing_url = response.xpath('//div[@class="property-item_title "]//a/@href').getall()
+
+        # call on those listing urls to get the data
+        for i in listing_url:
+            header = {'user-agent': random.choice(zimmo_web.user_agents)}
+            yield scrapy.Request(
+                url='https://www.zimmo.be' + i,
+                callback=self.extract_data,
+                headers=header
+            )
+
+
+    def convert_to_json(data):
+        data = data.replace(' ', '').replace('\n', '')
+        json_data = re.findall('property:(.*?)(\);)', data)[0][0]
+        regex = r'(,|{|})([a-z].*?)(:)'
+        json_data = '{"property": ' + re.sub(regex, lambda x: x.group(1) + '"' + x.group(2).strip() + '"' + x.group(3), json_data).replace("'", '"')
+        json_data = re.sub('(.)(,)(})', lambda x: x.group(1) + x.group(3), json_data)
+        return json.loads(json_data)
+
+    def extract_data(self, response):
+        # data point extraction
         try:
-            res = response.xpath('//script[contains(text(), "app.start")]/text()').get()
-            if not len(res):
-                with open(response.request.url.html, 'w') as f:
-                    f.write(response.text())
+            res = response.xpath('//script[contains(text(), "uuid")]/text()').get()
+            # if not len(res):
+            #     with open(response.request.url.html, 'w') as f:
+            #         f.write(response.text())
         except:
-            self.error.append(header['user-agent'])
-            print(header['user-agent'])
-
+            print('Extract data error')
 
         data = {}
 
@@ -61,10 +103,10 @@ class ZimmoExtraction(scrapy.Spider):
         # listing details
         x = response.xpath('//section[@id="property-stats"]/div[@class="section-inner"]//div');
         for i in x:
-            key = ' '.join(i.xpath('./div[2]//font/text()').getall())
-            value = ' '.join(i.xpath('./div[1]//font/text()').getall())
-        if key:
-            data[key] = value
+            key = ' '.join(i.xpath('./div[2]/text()').getall())
+            value = ' '.join(i.xpath('./div[1]/text()').getall())
+            if key:
+                data[key] = value
 
 
         # feature pairs
@@ -78,19 +120,18 @@ class ZimmoExtraction(scrapy.Spider):
 
 
         # documents block
-        # documents = '//ul[@class="download-item-list"]/li/a'
-        data['documents'] = response.xpath('//ul[@class="download-item-list"]//li/a/@href').getall()
+        data['documents'] = response.xpath('//ul[@class="download-item-list"]//li//a/@href').getall()
 
         # construction block
         construction = response.xpath('//section[@id="construction"]//div[@class="info-list"]');
         for i in construction:
-            key = ' '.join(i.xpath('.//div[@class="col-xs-7 info-name"]//font/text()').get(default='').strip().replace(' ','').lower())
-            value = ' '.join(i.xpath('.//div[@class="col-xs-5 info-value"]//font/text()').get(default='').strip().replace(' ','').lower())
+            key = ' '.join(i.xpath('.//div[@class="col-xs-7 info-name"]/text()').get(default='').strip().replace(' ','').lower())
+            value = ' '.join(i.xpath('.//div[@class="col-xs-5 info-value"]/text()').get(default='').strip().replace(' ','').lower())
             if key:
                 data[key] = value
 
         # description
-        desc = response.xpath('//section[@id="description"]//text()').getall()
+        desc = response.xpath('//section[@id="description"]//div/text()').getall()
         x = ''
         for i in desc:
             if i.replace('\n', '').replace(' ', ''):
@@ -101,14 +142,12 @@ class ZimmoExtraction(scrapy.Spider):
 
 
         # json extraction
-        start = res.index('property:') + 10
-        end = res.index(';\n\n') - 1
-        # modified_resp = res[start:end].replace(':', '":').replace(',')
-        #
-        # json_resp = json.loads()
+        if res:
+            json_dict = self.convert_to_json(res)
+            data['uuid'] = json_dict['uuid']
+
 
 
         yield data;
-
 
 
