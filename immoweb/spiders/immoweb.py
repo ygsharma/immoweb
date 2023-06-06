@@ -24,7 +24,7 @@ class ImmowebExtraction(scrapy.Spider):
         xsrf = response.headers.getlist('Set-Cookie')[0].decode("utf-8").split(";")[0].split("=")[1]
         immoweb_session = response.headers.getlist('Set-Cookie')[1].decode("utf-8").split(";")[0].split("=")[1]
         url = 'https://www.immoweb.be/en/login'
-        payload = '{\"login-email\":\"thelouiswills4@gmail.com\",\"login-password\":\"Rock0004@\"}'
+        payload = '{\"login-email\":\"thelouiswills4@gmail.com\",\"login-password\":\"*******\"}'
         headers = {
             'x-xsrf-token': xsrf.replace('%3D', '='),
             'origin': 'https://www.immoweb.be',
